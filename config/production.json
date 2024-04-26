@@ -1,0 +1,10 @@
+{
+    "base_ip": "",
+    "port": 9000,
+    "database": {
+        "host": "127.0.0.1",
+        "user": "root",
+        "name": "nkumba",
+        "password": ""
+    }
+}
