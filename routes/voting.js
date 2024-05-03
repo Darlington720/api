@@ -551,9 +551,21 @@ router.get("/election_statistics/:campus", async (req, res) => {
 
   //current election category
   const currentElection = await database("election_categories")
+    // .leftJoin("elections", "election_categories.id", "elections.category_id")
     .orderBy("id", "desc")
     .limit(1)
     .first();
+
+  // looking for the exact election taking place
+  const currentElectionDate = await database("elections")
+    .where({
+      category_id: currentElection.id,
+    })
+    .orderBy("id", "desc")
+    .limit(1)
+    .first();
+
+  // console.log("current elections", currentElectionDate);
 
   // console.log("current elections", currentElection);
 
@@ -589,15 +601,19 @@ router.get("/election_statistics/:campus", async (req, res) => {
   const exemptions = await database("vote_exemptions")
     .where({
       election_category_id: currentElection.id,
+      date: currentElectionDate.date,
       // date: new Date(),
     })
     .count();
+
+  // console.log("exemptions", exemptions);
 
   //now let's see the total voters
   const voters = await database("voters")
     .where({
       election_category_id: currentElection.id,
       campus: campus,
+      r_date: currentElectionDate.date,
     })
     .count();
 
@@ -773,11 +789,20 @@ router.post("/election_contestants", async (req, res) => {
       );
   }
 
+  // console.log(
+  //   "the date",
+  //   convertDateFormat(
+  //     new Date(`${req.body.election.date}`).toLocaleDateString()
+  //   )
+  // );
   //total votes
   const voters = await database("voters")
     .where({
-      election_category_id: currentElection.id,
+      election_category_id: req.body.election.category_id,
       campus: campus.label,
+      r_date: convertDateFormat(
+        new Date(`${req.body.election.date}`).toLocaleDateString()
+      ),
     })
     .count();
 
