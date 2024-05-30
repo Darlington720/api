@@ -639,6 +639,15 @@ router.post("/addVoter", async (req, res) => {
     .limit(1)
     .first();
 
+  // looking for the exact election taking place
+  const currentElectionDate = await database("elections")
+    .where({
+      category_id: currentElection.id,
+    })
+    .orderBy("id", "desc")
+    .limit(1)
+    .first();
+
   try {
     //first checking if voter exists
     const existingVoter = await database("voters")
@@ -666,10 +675,12 @@ router.post("/addVoter", async (req, res) => {
       election_category_id: election_cat,
     });
 
+    // retrieve the voters
     const voters = await database("voters")
       .where({
         election_category_id: currentElection.id,
         campus: campus,
+        r_date: currentElectionDate.date,
       })
       .count();
 
@@ -711,7 +722,7 @@ router.post("/election_categories", async (req, res) => {
 router.post("/election_contestants", async (req, res) => {
   const { election, campus, school } = req.body;
 
-  // console.log("body", req.body);
+  console.log("body", req.body);
   let contestants;
 
   //current election category
@@ -728,12 +739,24 @@ router.post("/election_contestants", async (req, res) => {
         "election_contestants.stu_no",
         "students_biodata.stdno"
       )
-      .leftJoin(
-        "election_vote_allocation",
-        "election_contestants.stu_no",
-        "election_vote_allocation.contestant_id"
-      )
+      .leftJoin("election_vote_allocation", function () {
+        this.on(
+          "election_vote_allocation.election_id",
+          "=",
+          "election_contestants.election_id"
+        ).andOn(
+          "election_vote_allocation.contestant_id",
+          "=",
+          "election_contestants.stu_no"
+        );
+      })
+      // .leftJoin(
+      //   "election_vote_allocation",
+      //   "election_contestants.election_id",
+      //   "election_vote_allocation.election_id"
+      // )
       .where("election_contestants.election_id", "=", election.id)
+      // .andWhere("election_vote_allocation.election_id", "=", election.id)
       .select(
         "election_contestants.*",
         "students_biodata.name",
@@ -840,6 +863,8 @@ router.post("/election_contestants", async (req, res) => {
 router.post("/vote_allocations", async (req, res) => {
   const { election, allocations, school } = req.body;
 
+  // console.log("the body", req.body);
+
   const studentNos = Object.keys(allocations);
 
   const x = await studentNos.map(async (stdno) => {
@@ -901,6 +926,7 @@ router.post("/vote_allocations", async (req, res) => {
       const existingAllocation = await database("election_vote_allocation")
         .where({
           contestant_id: stdno,
+          election_id: election.id,
         })
         .first();
 

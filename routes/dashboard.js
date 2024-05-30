@@ -5,6 +5,54 @@ const { database, baseIp, port } = require("../config");
 const _ = require("lodash");
 const { convertDateFormat } = require("../convertDateFormat");
 
+const getExamsDidInRoom = async (ed_id) => {
+  let num_of_students = [];
+
+  // First, using the `ed_id` to get all the course units did in the room
+  const courseUnitsDidInRoom = await database
+    .select("*")
+    .from("courseunits_in_exam_rooms")
+    .where({ ed_id });
+
+  if (courseUnitsDidInRoom.length === 0) {
+    return 0;
+  }
+
+  // Using each unit to get the students from the `students_in_exam_room`
+  const promises = courseUnitsDidInRoom.map(async (cu) => {
+    const result = await database
+      .from("students_in_exam_room")
+      .where({ cu_in_ex_id: cu.cunit_in_ex_room_id })
+      .count("cu_in_ex_id as num_of_students");
+
+    // `result` is an array of objects, take the first one and extract the count
+    const studentCount = result[0].num_of_students;
+
+    num_of_students.push({
+      id: cu.cunit_in_ex_room_id,
+      module_title: cu.course_name,
+      studentCount,
+    });
+  });
+
+  // Wait for all promises to resolve
+  await Promise.all(promises);
+
+  // Calculate totals
+  const totalStudents = num_of_students.reduce(
+    (sum, item) => sum + item.studentCount,
+    0
+  );
+  const totalModules = courseUnitsDidInRoom.length;
+
+  return {
+    courseUnitsDidInRoom,
+    students: num_of_students,
+    totalStudents,
+    totalModules,
+  };
+};
+
 router.get("/staff_gate_attendance/:month/:year", async (req, res) => {
   const { month, year } = req.params;
   // const year = 2023;
@@ -1852,6 +1900,168 @@ router.get("/invigilator_details/", (req, res) => {
     .then((data) => {
       res.send(data);
     });
+});
+
+router.post("/assigned_rooms", async (req, res) => {
+  const { date, campus } = req.body;
+
+  const d = new Date();
+  const d1 = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  // console.log(req.params);
+  console.log("date", date);
+
+  var m2 = moment(`${date}`, "YYYY-MM--DD h:mmA");
+
+  var moment2 = moment(`${date}`, "YYYY-MM--DD");
+
+  let currentTime = new Date().toLocaleTimeString();
+
+  var m1 = moment(`${d1} 7:00AM`, "YYYY-MM--DD h:mmA");
+  // var m1 = moment(`2023-02-01 7:00AM`, "YYYY-MM--DD h:mmA");
+
+  // var m1 = moment();
+
+  var moment1 = moment(`${d1}`, "YYYY-MM--DD");
+
+  // console.log("Params", req.params);
+
+  let newArr = [];
+  let totalStds = 0;
+  let grantTotal = 0;
+  let num_of_students = [];
+
+  // first lets get all the occurences of this lecturer
+  const examData = await database("exam_details")
+    .where("exam_details.date", "=", date)
+    .join("rooms", "exam_details.room_id", "=", "rooms.room_id")
+    .join("exam_sessions", "exam_details.session_id", "=", "exam_sessions.s_id")
+    .orderBy("exam_sessions.start_time");
+
+  // console.log("exam data", examData);
+
+  if (examData.length == 0) {
+    return res.send({
+      success: true,
+      data: [],
+      message: "There have no allocations",
+      result: [],
+    });
+  }
+
+  // other invigilators that are given the same room
+  const f = await examData.map(async (data, index) => {
+    const examsDidInRoom = await getExamsDidInRoom(examData[index].ed_id);
+    // console.log("exams", examsDidInRoom);
+    let status;
+    const id = examData[index].ed_id;
+    const room = examData[index].room_id;
+    const otherInvigilators = await database
+      .select("*")
+      .where({
+        exam_details_id: id,
+      })
+      // .andWhereNot("invigilators.staff_id", staff_id)
+      .from("invigilators")
+      .join("staff", "invigilators.staff_id", "=", "staff.staff_id");
+
+    const course_units_in_room = await database
+      .select("course_unit_code", "course_unit_name", "exam_groups.campus_id")
+      .from("exam_timetable")
+      .join(
+        "exam_groups",
+        "exam_timetable.exam_group_id",
+        "exam_groups.exam_group_id"
+      )
+      .where("exam_groups.campus_id", "=", campus)
+      .where({
+        room_id: room,
+        session_id: examData[index].session_id,
+        date: examData[index].date,
+      });
+
+    // console.log("exam details id", id);
+
+    if (moment.duration(moment2.diff(moment1))._data.days > 0) {
+      // console.log(moment.duration(moment2.diff(moment1))._data.days);
+      // console.log("Lecture is not supposed to be taught now");
+      status = "not now";
+      // console.log({ ...item, status: "not now" });
+    } else {
+      if (moment2.isSame(moment1)) {
+        // console.log({ ...item, status: "on" });
+        // newArr.push({ ...lecture, status: "on" });
+        status = "on";
+        // console.log("Lecture is still on");
+      } else {
+        // console.log({ ...item, status: "off" });
+        // newArr.push({ ...lecture, status: "off" });
+        status = "off";
+        // console.log("Lecture is supposed to have ended");
+      }
+    }
+
+    // console.log("total stds", num_of_students);
+    grantTotal += totalStds;
+
+    let x = {
+      room_data: data,
+      otherInvigilators,
+      course_units_in_room,
+      status,
+      examsDidInRoom,
+      // num_of_students,
+    };
+
+    newArr.push(x);
+  });
+
+  Promise.all(f).then(() => {
+    // console.log("grand total", grantTotal);
+    res.send({
+      success: true,
+      result: newArr,
+    });
+  });
+});
+
+router.get("/students_in_exam/:id", async (req, res) => {
+  const { id } = req.params;
+  let num_of_students = [];
+  // getting the students in the specificied exam
+  const students_in_ex_room = await database
+
+    .from("students_in_exam_room")
+    .join(
+      "students_biodata",
+      "students_in_exam_room.stu_no",
+      "=",
+      "students_biodata.stdno"
+    )
+    .join(
+      "student_registered_booklets",
+      "students_in_exam_room.se_id",
+      "student_registered_booklets.stu_in_ex_room_id"
+    )
+    .select(
+      "students_biodata.name",
+      "students_in_exam_room.*",
+      "student_registered_booklets.booklet_no"
+    )
+    .where({
+      cu_in_ex_id: id,
+    });
+
+  if (students_in_ex_room.length == 0) {
+    return res.send({
+      success: true,
+      result: [],
+    });
+  }
+
+  res.send({
+    success: true,
+    result: students_in_ex_room,
+  });
 });
 
 module.exports = router;

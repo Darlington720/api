@@ -317,6 +317,21 @@ router.post("/importExceltodb", (req, res) => {
                   upload_date: new Date(),
                 })
                 .then(async (result) => {
+                  const currentElection = await database("election_categories")
+                    // .leftJoin("elections", "election_categories.id", "elections.category_id")
+                    .orderBy("id", "desc")
+                    .limit(1)
+                    .first();
+
+                  // looking for the exact election taking place
+                  const currentElectionDate = await database("elections")
+                    .where({
+                      category_id: currentElection.id,
+                    })
+                    .orderBy("id", "desc")
+                    .limit(1)
+                    .first();
+
                   const requiredPercentage = await database
                     .select("*")
                     .from("constraints")
@@ -324,28 +339,53 @@ router.post("/importExceltodb", (req, res) => {
                     .first();
 
                   // return all students that are exempted
+                  // const exemptedStudents = await database("vote_exemptions")
+                  //   .join(
+                  //     "students_biodata",
+                  //     "vote_exemptions.stu_no",
+                  //     "students_biodata.stdno"
+                  //   )
+                  //   .select("vote_exemptions.*", "students_biodata.name")
+                  //   .count();
                   const exemptedStudents = await database("vote_exemptions")
-                    .join(
-                      "students_biodata",
-                      "vote_exemptions.stu_no",
-                      "students_biodata.stdno"
-                    )
-                    .select("vote_exemptions.*", "students_biodata.name")
+                    .where({
+                      election_category_id: currentElection.id,
+                      date: currentElectionDate.date,
+                      // date: new Date(),
+                    })
                     .count();
 
                   //lets get the elible voters
+                  // const elligibleVoters = await database("student_paid_fess")
+                  //   .join(
+                  //     "students_biodata",
+                  //     "student_paid_fess.stu_no",
+                  //     "students_biodata.stdno"
+                  //   )
+                  //   .where(
+                  //     "student_paid_fess.acc_yr",
+                  //     "=",
+                  //     requiredPercentage.acc_yr
+                  //   )
+                  //   .andWhere("students_biodata.campus", "=", "main")
+                  //   .andWhere(
+                  //     "student_paid_fess.paid_percentage",
+                  //     ">=",
+                  //     requiredPercentage.c_percentage
+                  //   )
+                  //   .count();
+
                   const elligibleVoters = await database("student_paid_fess")
                     .join(
                       "students_biodata",
                       "student_paid_fess.stu_no",
                       "students_biodata.stdno"
                     )
-                    .where(
-                      "student_paid_fess.acc_yr",
-                      "=",
-                      requiredPercentage.acc_yr
-                    )
-                    .andWhere("students_biodata.campus", "=", "main")
+                    .where({
+                      acc_yr_id: currentSession.acc_yr_id,
+                      sem_half: currentSession.sem_half,
+                    })
+                    .andWhere("students_biodata.campus", "=", campus)
                     .andWhere(
                       "student_paid_fess.paid_percentage",
                       ">=",
