@@ -19,6 +19,7 @@
     "expo-server-sdk": "^3.6.0",
     "express": "^4.18.2",
     "express-fileupload": "^1.4.0",
+    "express-rate-limit": "^7.5.0",
     "jsonwebtoken": "^8.5.1",
     "knex": "^2.4.2",
     "lodash": "^4.17.21",
@@ -33,6 +34,7 @@
     "socket.io": "^4.5.1",
     "twilio": "^3.84.0",
     "unique-string": "^3.0.0",
+    "winston": "^3.17.0",
     "xlsx": "^0.18.5"
   }
 }

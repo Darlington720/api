@@ -25,14 +25,35 @@ const {
   sendMultiplePushNotifications,
 } = require("./pushNotifications");
 var { baseIp, port, database } = require("./config");
-
 const fileUpload = require("express-fileupload");
+const rateLimit = require("express-rate-limit");
+const winston = require("winston");
+
+const logger = winston.createLogger({
+  level: "info",
+  format: winston.format.json(),
+  transports: [new winston.transports.File({ filename: "app.log" })],
+});
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per `windowMs`
+  message: "Too many requests, please try again later.",
+  headers: true,
+});
+
+const corsOptions = {
+  origin: ["http://199.241.139.118"], // Allow only specific domains
+  methods: "GET,POST,PUT,DELETE",
+  allowedHeaders: "Content-Type,Authorization",
+};
 
 const upload = multer();
 const app = express();
 const secret = "mySecret";
+app.use(limiter);
 app.use(express.json({ limit: "10mb" }));
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.static(__dirname + "/public"));
 app.use(express.static(path.join(__dirname, "build")));
 app.use(fileUpload());
@@ -963,6 +984,8 @@ app.get("/api/currentUniversitySession", async (req, res) => {
   });
   //i want to return the latest
 });
+
+logger.info("Server started...");
 
 const expressServer = app.listen(port, baseIp, () =>
   console.log(`App is running on port ${port}`)
